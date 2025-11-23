@@ -4,64 +4,304 @@ from aiohttp import web
 import database
 from github_client import GitHubClient
 
-# HTML Template with Monaco Editor
+# HTML Template with GitHub-like Dark Theme & AGGRESSIVE ZOOM BLOCK
 EDITOR_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Bot Web Editor</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Editing {{FILENAME}}</title>
     <style>
-        body { margin: 0; padding: 0; background-color: #1e1e1e; color: #d4d4d4; font-family: sans-serif; }
-        #header { height: 50px; display: flex; align-items: center; padding: 0 20px; background: #252526; border-bottom: 1px solid #333; }
-        #filename { font-weight: bold; margin-right: auto; }
-        #container { width: 100%; height: calc(100vh - 50px); }
-        button { padding: 8px 16px; background: #0e639c; color: white; border: none; cursor: pointer; border-radius: 2px; }
-        button:hover { background: #1177bb; }
+        :root {
+            --bg-canvas: #0d1117;
+            --bg-header: #161b22;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --btn-green: #238636;
+            --btn-green-hover: #2ea043;
+            --accent-blue: #58a6ff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-canvas);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; 
+            touch-action: pan-x pan-y; /* Отключаем жесты зума в CSS */
+        }
+
+        /* HEADER */
+        header {
+            background-color: var(--bg-header);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .breadcrumbs {
+            font-size: 14px;
+            color: var(--text-primary);
+            display: flex;
+            gap: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .breadcrumbs a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+        
+        .breadcrumbs a:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumbs span.path {
+            color: var(--text-secondary);
+        }
+        
+        .breadcrumbs span.file {
+            font-weight: 600;
+        }
+
+        /* MAIN CONTAINER */
+        main {
+            flex: 1;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .editor-wrapper {
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: #0d1117;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .editor-header {
+            background-color: var(--bg-header);
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        #monaco-container {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* FOOTER ACTIONS */
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+            flex-shrink: 0;
+        }
+
+        button {
+            padding: 5px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid rgba(240, 246, 252, 0.1);
+            line-height: 20px;
+            transition: 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--btn-green);
+            color: white;
+            border-color: rgba(240, 246, 252, 0.1);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--btn-green-hover);
+        }
+
+        .btn-secondary {
+            background-color: #21262d;
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background-color: #30363d;
+        }
+
+        /* LOADER */
+        #status-msg {
+            margin-right: 15px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
     </style>
 </head>
 <body>
-    <div id="header">
-        <span id="filename">{{FILENAME}}</span>
-        <button onclick="saveContent()">💾 Save & Close</button>
-    </div>
-    <div id="container"></div>
+
+    <header>
+        <div class="breadcrumbs">
+            <span>{{OWNER}}</span>
+            <span>/</span>
+            <strong>{{REPO}}</strong>
+            <span>/</span>
+            <span class="path">{{DIR_PATH}}</span>
+            <span class="file">{{FILENAME_ONLY}}</span>
+        </div>
+        <div>
+            <span style="font-size: 12px; color: #8b949e; margin-right: 10px;">Bot Editor</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="editor-wrapper">
+            <div class="editor-header">
+                <span>Editing <strong>{{FILENAME}}</strong></span>
+            </div>
+            <div id="monaco-container"></div>
+        </div>
+
+        <div class="actions">
+            <span id="status-msg">Saving...</span>
+            <button class="btn-primary" onclick="saveContent()">Commit Changes via Bot</button>
+        </div>
+    </main>
 
     <!-- Monaco Editor CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
     <script>
+        // --- ANTI-ZOOM HACKS ---
+        
+        // 1. Блокируем жест 'pinch' (два пальца) на уровне документа
+        document.addEventListener('touchmove', function(event) {
+            if (event.scale !== 1) { 
+                event.preventDefault(); 
+            }
+        }, { passive: false });
+
+        // 2. Блокируем жесты Safari (gesturestart/change/end)
+        document.addEventListener('gesturestart', function(e) {
+            e.preventDefault();
+        });
+
+        // 3. Блокируем двойной тап (часто вызывает зум)
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+        
+        // --- END HACKS ---
+
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' }});
         
         let editor;
         const uuid = "{{UUID}}";
 
         require(['vs/editor/editor.main'], function() {
-            editor = monaco.editor.create(document.getElementById('container'), {
+            monaco.editor.defineTheme('github-dark', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [
+                    { token: '', background: '0d1117' } // Match container BG
+                ],
+                colors: {
+                    'editor.background': '#0d1117',
+                    'editor.lineHighlightBackground': '#161b22',
+                    'editorLineNumber.foreground': '#8b949e',
+                    'editor.foreground': '#c9d1d9'
+                }
+            });
+
+            editor = monaco.editor.create(document.getElementById('monaco-container'), {
                 value: `{{CONTENT}}`,
                 language: '{{LANG}}',
-                theme: 'vs-dark',
-                automaticLayout: true
+                theme: 'github-dark',
+                automaticLayout: true,
+                fontSize: 14,
+                fontFamily: 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+                minimap: { enabled: true },
+                padding: { top: 16, bottom: 16 },
+                scrollBeyondLastLine: false,
+                renderWhitespace: "selection"
             });
         });
 
         async function saveContent() {
+            const btn = document.querySelector('.btn-primary');
+            const status = document.getElementById('status-msg');
+            
+            btn.disabled = true;
+            btn.innerText = "Processing...";
+            status.style.opacity = 1;
+            status.innerText = "Sending to Bot...";
+            status.style.color = "#8b949e";
+
             const content = editor.getValue();
             try {
                 const resp = await fetch(`/editor/${uuid}/save`, {
                     method: 'POST',
                     body: content
                 });
+                
                 if (resp.ok) {
-                    document.body.innerHTML = "<h2 style='text-align:center; margin-top:50px; color: #4ec9b0'>Saved! Return to Telegram Bot.</h2>";
-                    // Optional: Close window
-                    // window.close(); 
+                    status.innerText = "✅ Sent to Telegram!";
+                    status.style.color = "#2ea043";
+                    btn.innerText = "Check your Bot";
                 } else {
-                    alert("Error saving!");
+                    status.innerText = "❌ Error saving";
+                    status.style.color = "#f85149";
+                    btn.disabled = false;
+                    btn.innerText = "Commit Changes via Bot";
                 }
             } catch (e) {
-                alert("Network error: " + e);
+                status.innerText = "❌ Network Error";
+                status.style.color = "#f85149";
+                btn.disabled = false;
+                btn.innerText = "Try Again";
             }
         }
+        
+        // Ctrl+S to save
+        document.addEventListener('keydown', e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveContent();
+            }
+        });
     </script>
 </body>
 </html>
@@ -74,8 +314,6 @@ async def editor_handler(request):
     if not session:
         return web.Response(text="Link expired or invalid.", status=404)
     
-    # Загружаем контент из GitHub, если еще нет pending_content
-    # Или берем свежий? Лучше брать текущий с GitHub для старта
     user = await database.get_user(session['user_id'])
     client = GitHubClient(user['github_token'])
     
@@ -87,17 +325,29 @@ async def editor_handler(request):
     import base64
     content = base64.b64decode(file_data['content']).decode('utf-8')
     
-    # Определяем язык для подсветки
+    # Lang detection
     ext = session['path'].split('.')[-1]
-    lang_map = {'py': 'python', 'js': 'javascript', 'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown'}
+    lang_map = {
+        'py': 'python', 'js': 'javascript', 'ts': 'typescript', 
+        'html': 'html', 'css': 'css', 'json': 'json', 'md': 'markdown',
+        'yml': 'yaml', 'yaml': 'yaml', 'sh': 'shell', 'go': 'go'
+    }
     lang = lang_map.get(ext, 'plaintext')
     
-    # Рендерим шаблон
-    # Экранируем контент для JS строки (просто, но нужно быть аккуратным с backticks)
-    safe_content = content.replace("`", "\\`").replace("${", "\\${")
+    # Path processing for breadcrumbs
+    full_path = session['path']
+    filename_only = full_path.split('/')[-1]
+    dir_path = "/".join(full_path.split('/')[:-1]) + "/" if "/" in full_path else ""
+
+    # Escaping logic
+    safe_content = content.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
     
     html = EDITOR_TEMPLATE.replace("{{UUID}}", uuid)\
-                          .replace("{{FILENAME}}", session['path'])\
+                          .replace("{{OWNER}}", session['owner'])\
+                          .replace("{{REPO}}", session['repo'])\
+                          .replace("{{FILENAME}}", full_path)\
+                          .replace("{{FILENAME_ONLY}}", filename_only)\
+                          .replace("{{DIR_PATH}}", dir_path)\
                           .replace("{{CONTENT}}", safe_content)\
                           .replace("{{LANG}}", lang)
     
@@ -107,20 +357,7 @@ async def editor_save_handler(request):
     uuid = request.match_info['uuid']
     content = await request.text()
     
-    # Сохраняем во временное хранилище
     await database.update_editor_content(uuid, content)
-    
-    # Тут можно было бы триггернуть бота отправить сообщение юзеру, 
-    # но aiohttp работает отдельно.
-    # Юзер сам нажмет кнопку в боте (или мы отправим сообщение, если бот инстанс глобален)
-    
-    # Вариант: Просто сохраняем в БД. Бот должен быть уведомлен?
-    # В рамках этой архитектуры проще всего, если бот сам увидит изменение,
-    # но мы обещали "бот в лс юзеру скажет".
-    # Для этого нам нужен доступ к объекту `bot` из main.py. 
-    # Пока вернем 200 OK, а в handlers/files.py сделаем механизм проверки.
-    # ЛИБО: Импортируем bot из main (циклический импорт!).
-    # Решение: В main.py передадим bot в app.
     
     bot = request.app['bot']
     session = await database.get_editor_session(uuid)
