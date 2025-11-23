@@ -1,7 +1,26 @@
-node_modules/
-dist/
-.env
-.DS_Store
+# Python / System
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
 .idea/
 .vscode/
+__MACOSX/
+.DS_Store
+
+# Environment & Secrets
+.env
+.env.local
+
+# SSL Certificates (CRITICAL)
+certs/
+*.pem
+*.key
+*.crt
+
+# Database
+bot_storage.db
+*.sqlite3
+
+# Logs
 *.log

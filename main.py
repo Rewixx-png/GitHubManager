@@ -3,22 +3,28 @@ import logging
 import os
 import sys
 import html
+import ssl
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 
 import database
 import keyboards
-# FIX: Импортируем роутер из пакета handlers
 from handlers import router 
 from github_client import verify_signature
+from web_editor import editor_handler, editor_save_handler
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET")
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", 8080))
-WEBHOOK_HOST = "127.0.0.1" 
+# WEBHOOK_HOST теперь используется как fallback, если нет BASE_URL
+WEBHOOK_HOST = "0.0.0.0" 
+
+# SSL Config
+SSL_CERT = os.getenv("SSL_CERT")
+SSL_KEY = os.getenv("SSL_KEY")
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
@@ -82,13 +88,28 @@ async def github_webhook_handle(request):
 
 async def start_webhook_server():
     app = web.Application()
+    app['bot'] = bot
+    
     app.router.add_post('/github-webhook', github_webhook_handle)
+    app.router.add_get('/editor/{uuid}', editor_handler)
+    app.router.add_post('/editor/{uuid}/save', editor_save_handler)
+    
     runner = web.AppRunner(app)
     await runner.setup()
     
-    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT)
+    # --- SSL CONFIGURATION ---
+    ssl_context = None
+    if SSL_CERT and SSL_KEY:
+        if os.path.exists(SSL_CERT) and os.path.exists(SSL_KEY):
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(SSL_CERT, SSL_KEY)
+            logging.info("🔒 SSL enabled")
+        else:
+            logging.error("❌ SSL paths provided but files not found!")
+    
+    site = web.TCPSite(runner, WEBHOOK_HOST, WEBHOOK_PORT, ssl_context=ssl_context)
     await site.start()
-    logging.info(f"🕸 Local Webhook Server running on {WEBHOOK_HOST}:{WEBHOOK_PORT}")
+    logging.info(f"🕸 Web Server running on port {WEBHOOK_PORT}")
 
 async def main():
     await database.init_db()

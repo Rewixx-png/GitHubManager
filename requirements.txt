@@ -1,0 +1,7 @@
+aiogram
+aiohttp
+aiosqlite
+python-dotenv
+cryptography
+paramiko
+GitPython
